@@ -6,3 +6,10 @@ shogi686microは、ソースをシンプルにすることを目指して作っ�
 
 USIに対応しています。自分でビルドして将棋所とかで使ってください。  
 Visual Studioの場合、Clang with Microsoft CodeGenを使ったほうがずいぶんNPSが高いみたいです。
+
+# merom686氏によるオリジナル
+originalブランチはmerom686氏によるオリジナルそのまま。Macでは以下のようにビルドして将棋所にUSIエンジンとして登録可能
+
+```
+g++ -o micro micro.cpp -std=c++11 -Ofast
+```
