@@ -6,3 +6,38 @@ shogi686microは、ソースをシンプルにすることを目指して作っ�
 
 USIに対応しています。自分でビルドして将棋所とかで使ってください。  
 Visual Studioの場合、Clang with Microsoft CodeGenを使ったほうがずいぶんNPSが高いみたいです。
+
+# TCP接続版(boost使用)
+
+Mac上で、TCP経由で将棋所に接続するバージョン。boostライブラリ使用。将棋所からTCPサーバを立ち上げ、それにエンジンがTCPクライアントとして接続する形態。
+
+## ビルド環境構築
+
+```
+brew install boost
+```
+
+## ビルド
+
+```
+g++ -o micro_tcp micro.cpp -std=c++11 -Ofast
+```
+
+## サーバスクリプトの設置
+
+以下の内容のファイルを`listen.sh`として設置。
+
+```
+#!/bin/sh
+nc -l 8090
+```
+
+`chmod +x listen.sh`
+
+## 将棋所へ登録
+
+将棋所のエンジン登録で、先ほど作成した`listen.sh`を登録する。`listen.sh`を開いてエンジン登録待ちになっている状態で、ビルドした`micro_tcp`をターミナル上で実行。
+
+## 将棋所で対局
+
+対局時は、将棋所で対局開始してから、`micro_tcp`をターミナル上で実行。

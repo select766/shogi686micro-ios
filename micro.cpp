@@ -12,12 +12,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <boost/asio.hpp>
 using namespace std;
+
+boost::asio::ip::tcp::iostream *server = nullptr;
 
 #define DEBUG
 #ifdef DEBUG
 #define assert(x) \
-if (!(x)){ cout << "info string error file:" << __FILE__ << " line:" << __LINE__ << endl; throw; }
+if (!(x)){ *server << "info string error file:" << __FILE__ << " line:" << __LINE__ << endl; throw; }
 #else
 #define assert(x) ((void)0)
 #endif
@@ -95,7 +98,7 @@ ostream& operator<<(ostream& os, const map<string, Option>& options) {
         vit[it->second.idx_] = it;
     }
     for (auto it : vit) {
-        cout << "option name " << it->first << ' ' << it->second << '\n';
+        *server << "option name " << it->first << ' ' << it->second << '\n';
     }
     return os;
 }
@@ -567,7 +570,7 @@ void infoToUSI(const Score score, const int depth) {
         pv += ' ' + move.toSfen();
     }
 
-    cout << "info" << " depth " << depth << " time " << msec << " nodes " << ::nodes
+    *server << "info" << " depth " << depth << " time " << msec << " nodes " << ::nodes
         << " nps " << ::nodes * 1000 / msec << " score " << oss_score.str() << " pv" << pv << endl;
 }
 
@@ -672,8 +675,8 @@ void idLoop(Position *const ppos) {
     Move best_move = Move::None();
 
     if (ppos->isWin()) {
-        cout << "info score mate + string nyugyoku win" << endl;
-        cout << "bestmove win" << endl;
+        *server << "info score mate + string nyugyoku win" << endl;
+        *server << "bestmove win" << endl;
         return;
     }
     if ((string)::options["Eval"] == "Random(NoSearch)") goto id_end;
@@ -697,9 +700,9 @@ id_end:
     // 時間までに1手も読めなかったらランダムに指す
     if (best_move.is_none()) best_move = randomMove(*ppos);
 
-    if (best_move.is_none()) cout << "info score mate - string resign" << endl;
+    if (best_move.is_none()) *server << "info score mate - string resign" << endl;
 
-    cout << "bestmove " << best_move.toSfen() << endl;
+    *server << "bestmove " << best_move.toSfen() << endl;
 }
 
 void think(Position& pos, const int msec) {
@@ -721,15 +724,15 @@ void usiLoop() {
 
     string cmd, token;
 
-    while (getline(cin, cmd)) {
+    while (getline(*server, cmd)) {
         istringstream iss(cmd);
         iss >> token;
 
         if (token == "usi") {
-            cout << "id name shogi686micro 2.0" << endl;
-            cout << "id author merom686" << endl;
-            cout << ::options;
-            cout << "usiok" << endl;
+            *server << "id name shogi686micro 2.0 TCP" << endl;
+            *server << "id author merom686" << endl;
+            *server << ::options;
+            *server << "usiok" << endl;
 
         } else if (token == "setoption") {
             string name, value;
@@ -741,14 +744,14 @@ void usiLoop() {
 
         } else if (token == "isready") {
             // 特に準備することがない
-            cout << "readyok" << endl;
+            *server << "readyok" << endl;
 
         } else if (token == "position") {
             ppos = vpos[16].fromSfen(iss.str().substr((size_t)iss.tellg() + 1));
 
         } else if (token == "go") {
             Position& pos = *ppos;
-            cout << "info score cp " << pos.evaluate() << " string static score" << endl;
+            *server << "info score cp " << pos.evaluate() << " string static score" << endl;
             iss >> token;
 
             if (token == "btime") {
@@ -761,7 +764,7 @@ void usiLoop() {
                 think(pos, 86400 * 1000);
 
             } else if (token == "mate") {
-                cout << "checkmate notimplemented" << endl;
+                *server << "checkmate notimplemented" << endl;
             }
 
         } else if (token == "stop") {
@@ -778,6 +781,11 @@ void usiLoop() {
 }
 
 int main() {
+    server = new boost::asio::ip::tcp::iostream("127.0.0.1", "8090");
+    if (!*server) {
+        cerr << "Failed to connect tcp server" << endl;
+        return 1;
+    }
     usiLoop();
     return 0;
 }
