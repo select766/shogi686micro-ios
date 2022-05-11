@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-int micro_main();
+int micro_main(const char* server_ip);
 
 #ifdef __cplusplus
 }

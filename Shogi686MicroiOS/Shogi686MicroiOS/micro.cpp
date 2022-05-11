@@ -22,7 +22,7 @@ int fd_socket = -1;
 
 
 
-bool socket_connect() {
+bool socket_connect(const char* server_ip) {
     fd_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (fd_socket == -1) {
         cerr << "Failed to create socket" << endl;
@@ -30,7 +30,8 @@ bool socket_connect() {
     }
     struct sockaddr_in sin;
     sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+    cerr << "server: " << server_ip << endl;
+    sin.sin_addr.s_addr = inet_addr(server_ip);
     sin.sin_port = htons(8090);
 
     int ret = connect(fd_socket, (const struct sockaddr*)&sin, sizeof(sin));
@@ -849,8 +850,8 @@ void usiLoop() {
     }
 }
 
-extern "C" int micro_main() {
-    if (!socket_connect()) {
+extern "C" int micro_main(const char* server_ip) {
+    if (!socket_connect(server_ip)) {
         return 1;
     }
     thread thread(usiLoop);
