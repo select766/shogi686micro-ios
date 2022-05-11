@@ -12,15 +12,67 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
-#include <boost/asio.hpp>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 using namespace std;
 
-boost::asio::ip::tcp::iostream *server = nullptr;
+int fd_socket = -1;
+
+
+
+bool socket_connect() {
+    fd_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd_socket == -1) {
+        cerr << "Failed to create socket" << endl;
+        return false;
+    }
+    struct sockaddr_in sin;
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+    sin.sin_port = htons(8090);
+
+    int ret = connect(fd_socket, (const struct sockaddr*)&sin, sizeof(sin));
+    if (ret == -1) {
+        cerr << "Failed to connect tcp server" << endl;
+        return false;
+    }
+
+    return true;
+}
+
+void socket_send_string(ostringstream &oss) {
+    string s = oss.str();
+    cerr << "SEND: " << s;
+    const char* cstr = s.c_str();
+    size_t len = strlen(cstr);
+    if (send(fd_socket, cstr, len, 0) < len) {
+        cerr << "partial send error" << endl;
+    }
+}
+
+bool socket_recv_line(string &s) {
+    // 末尾の改行コードは含まない
+    s.clear();
+    char buf;
+    while (recv(fd_socket, &buf, 1, 0)) {
+        if (buf == '\r') {
+            // 無視
+            continue;
+        } else if (buf == '\n') {
+            cerr << "RECV: " << s << endl;
+            return true;
+        }
+        s += buf;
+    }
+    return false;
+}
 
 #define DEBUG
 #ifdef DEBUG
 #define assert(x) \
-if (!(x)){ *server << "info string error file:" << __FILE__ << " line:" << __LINE__ << endl; throw; }
+if (!(x)){ ostringstream oss; oss << "info string error file:" << __FILE__ << " line:" << __LINE__ << endl; socket_send_string(oss); throw; }
 #else
 #define assert(x) ((void)0)
 #endif
@@ -98,7 +150,9 @@ ostream& operator<<(ostream& os, const map<string, Option>& options) {
         vit[it->second.idx_] = it;
     }
     for (auto it : vit) {
-        *server << "option name " << it->first << ' ' << it->second << '\n';
+        ostringstream oss;
+        oss << "option name " << it->first << ' ' << it->second << '\n';
+        socket_send_string(oss);
     }
     return os;
 }
@@ -570,8 +624,10 @@ void infoToUSI(const Score score, const int depth) {
         pv += ' ' + move.toSfen();
     }
 
-    *server << "info" << " depth " << depth << " time " << msec << " nodes " << ::nodes
+    ostringstream oss;
+    oss << "info" << " depth " << depth << " time " << msec << " nodes " << ::nodes
         << " nps " << ::nodes * 1000 / msec << " score " << oss_score.str() << " pv" << pv << endl;
+    socket_send_string(oss);
 }
 
 // 探索 静止探索を含む 静止探索は取る手深さ4と王手回避(リキャプチャも入れたい)
@@ -675,8 +731,10 @@ void idLoop(Position *const ppos) {
     Move best_move = Move::None();
 
     if (ppos->isWin()) {
-        *server << "info score mate + string nyugyoku win" << endl;
-        *server << "bestmove win" << endl;
+        ostringstream oss;
+        oss << "info score mate + string nyugyoku win" << endl;
+        oss << "bestmove win" << endl;
+        socket_send_string(oss);
         return;
     }
     if ((string)::options["Eval"] == "Random(NoSearch)") goto id_end;
@@ -700,9 +758,11 @@ id_end:
     // 時間までに1手も読めなかったらランダムに指す
     if (best_move.is_none()) best_move = randomMove(*ppos);
 
-    if (best_move.is_none()) *server << "info score mate - string resign" << endl;
+    ostringstream oss;
+    if (best_move.is_none()) oss << "info score mate - string resign" << endl;
 
-    *server << "bestmove " << best_move.toSfen() << endl;
+    oss << "bestmove " << best_move.toSfen() << endl;
+    socket_send_string(oss);
 }
 
 void think(Position& pos, const int msec) {
@@ -724,15 +784,17 @@ void usiLoop() {
 
     string cmd, token;
 
-    while (getline(*server, cmd)) {
+    while (socket_recv_line(cmd)) {
         istringstream iss(cmd);
         iss >> token;
 
         if (token == "usi") {
-            *server << "id name shogi686micro 2.0 TCP" << endl;
-            *server << "id author merom686" << endl;
-            *server << ::options;
-            *server << "usiok" << endl;
+            ostringstream oss;
+            oss << "id name shogi686micro 2.0 TCP" << endl;
+            oss << "id author merom686" << endl;
+            oss << ::options;
+            oss << "usiok" << endl;
+            socket_send_string(oss);
 
         } else if (token == "setoption") {
             string name, value;
@@ -744,14 +806,19 @@ void usiLoop() {
 
         } else if (token == "isready") {
             // 特に準備することがない
-            *server << "readyok" << endl;
+            ostringstream oss;
+            oss << "readyok" << endl;
+            socket_send_string(oss);
+
 
         } else if (token == "position") {
             ppos = vpos[16].fromSfen(iss.str().substr((size_t)iss.tellg() + 1));
 
         } else if (token == "go") {
             Position& pos = *ppos;
-            *server << "info score cp " << pos.evaluate() << " string static score" << endl;
+            ostringstream oss;
+            oss << "info score cp " << pos.evaluate() << " string static score" << endl;
+            socket_send_string(oss);
             iss >> token;
 
             if (token == "btime") {
@@ -764,7 +831,9 @@ void usiLoop() {
                 think(pos, 86400 * 1000);
 
             } else if (token == "mate") {
-                *server << "checkmate notimplemented" << endl;
+                ostringstream oss;
+                oss << "checkmate notimplemented" << endl;
+                socket_send_string(oss);
             }
 
         } else if (token == "stop") {
@@ -781,9 +850,7 @@ void usiLoop() {
 }
 
 int main() {
-    server = new boost::asio::ip::tcp::iostream("127.0.0.1", "8090");
-    if (!*server) {
-        cerr << "Failed to connect tcp server" << endl;
+    if (!socket_connect()) {
         return 1;
     }
     usiLoop();
