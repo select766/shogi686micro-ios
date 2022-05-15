@@ -16,13 +16,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "micro.hpp"
 using namespace std;
 
 int fd_socket = -1;
+message_cb *cb;
 
 
-
-bool socket_connect(const char* server_ip) {
+bool socket_connect(const char* server_ip, int server_port) {
     fd_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (fd_socket == -1) {
         cerr << "Failed to create socket" << endl;
@@ -32,7 +33,7 @@ bool socket_connect(const char* server_ip) {
     sin.sin_family = AF_INET;
     cerr << "server: " << server_ip << endl;
     sin.sin_addr.s_addr = inet_addr(server_ip);
-    sin.sin_port = htons(8090);
+    sin.sin_port = htons(server_port);
 
     int ret = connect(fd_socket, (const struct sockaddr*)&sin, sizeof(sin));
     if (ret == -1) {
@@ -48,6 +49,7 @@ void socket_send_string(ostringstream &oss) {
     cerr << "SEND: " << s;
     const char* cstr = s.c_str();
     size_t len = strlen(cstr);
+    cb(cstr);
     if (send(fd_socket, cstr, len, 0) < len) {
         cerr << "partial send error" << endl;
     }
@@ -63,6 +65,7 @@ bool socket_recv_line(string &s) {
             continue;
         } else if (buf == '\n') {
             cerr << "RECV: " << s << endl;
+            cb(s.c_str());
             return true;
         }
         s += buf;
@@ -850,8 +853,9 @@ void usiLoop() {
     }
 }
 
-extern "C" int micro_main(const char* server_ip) {
-    if (!socket_connect(server_ip)) {
+extern "C" int micro_main(const char* server_ip, int server_port, message_cb _cb) {
+    cb = _cb;
+    if (!socket_connect(server_ip, server_port)) {
         return 1;
     }
     thread thread(usiLoop);
